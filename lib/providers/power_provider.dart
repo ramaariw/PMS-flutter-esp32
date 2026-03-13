@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:mqtt_client/mqtt_client.dart';
 import '../core/mqtt_service.dart';
 import 'dart:async';
+import 'package:flutter/services.dart';
 
 class PowerProvider with ChangeNotifier {
   final MqttService _mqttService = MqttService();
@@ -15,6 +16,8 @@ class PowerProvider with ChangeNotifier {
   bool relay2 = false;
   String uptime = "00:00:00";
 
+  // PENJAGA BIAR GAK JOGET:
+  DateTime? _lastRelayAction;
   Timer? _relayTimer;
   int remainingSeconds = 0;
 
@@ -47,12 +50,17 @@ class PowerProvider with ChangeNotifier {
           recMess.payload.message,
         );
 
+        // LOGIKA PENJAGA: Cek apakah aksi terakhir sudah lebih dari 2 detik
+        bool canUpdateRelay =
+            _lastRelayAction == null ||
+            DateTime.now().difference(_lastRelayAction!).inSeconds > 2;
+
         if (topic == "esp32rm/sensor") {
           _updateData(rawPayload);
-        } else if (topic == "esp32rm/r1/stat") {
+        } else if (topic == "esp32rm/r1/stat" && canUpdateRelay) {
           relay1 = (rawPayload == "ON");
           notifyListeners();
-        } else if (topic == "esp32rm/r2/stat") {
+        } else if (topic == "esp32rm/r2/stat" && canUpdateRelay) {
           relay2 = (rawPayload == "ON");
           notifyListeners();
         }
@@ -85,7 +93,7 @@ class PowerProvider with ChangeNotifier {
   }
 
   Future<void> refreshData() async {
-    isLoading = true; // Kasih tau sistem lagi sibuk
+    isLoading = true;
     notifyListeners();
 
     if (isConnected) {
@@ -98,12 +106,15 @@ class PowerProvider with ChangeNotifier {
       await initPms();
     }
 
-    isLoading = false; // Kasih tau sistem udah kelar
+    isLoading = false;
     notifyListeners();
   }
 
   void toggleRelay(int channel, bool value) {
     if (!isConnected || _mqttService.client == null) return;
+
+    HapticFeedback.mediumImpact();
+    _lastRelayAction = DateTime.now();
 
     if (channel == 1) relay1 = value;
     if (channel == 2) relay2 = value;
@@ -123,7 +134,8 @@ class PowerProvider with ChangeNotifier {
   }
 
   void setRelayTimer(int minutes, int channel) {
-    _relayTimer?.cancel(); // Cancel timer lama kalau ada
+    HapticFeedback.mediumImpact();
+    _relayTimer?.cancel();
     remainingSeconds = minutes * 60;
     notifyListeners();
 
@@ -132,7 +144,7 @@ class PowerProvider with ChangeNotifier {
         remainingSeconds--;
         notifyListeners();
       } else {
-        toggleRelay(channel, false); // Matiin relay pas waktu abis
+        toggleRelay(channel, false);
         _relayTimer?.cancel();
         notifyListeners();
       }

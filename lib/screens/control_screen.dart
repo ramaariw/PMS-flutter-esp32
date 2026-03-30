@@ -7,7 +7,6 @@ import 'package:flutter/services.dart';
 class ControlScreen extends StatelessWidget {
   const ControlScreen({super.key});
 
-  // Fungsi buat munculin input manual
   void _showTimerInput(
     BuildContext context,
     PowerProvider powerData,
@@ -34,7 +33,7 @@ class ControlScreen extends StatelessWidget {
                   top: Radius.circular(30),
                 ),
                 border: Border.all(
-                  color: Colors.orangeAccent.withAlpha(40),
+                  color: Colors.orangeAccent.withValues(alpha: 0.1),
                   width: 1,
                 ),
               ),
@@ -51,7 +50,7 @@ class ControlScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    "SET TIMER FOR R$channel",
+                    "SET TIMER FOR RELAY $channel",
                     style: GoogleFonts.orbitron(
                       color: Colors.orangeAccent,
                       fontSize: 14,
@@ -63,7 +62,6 @@ class ControlScreen extends StatelessWidget {
                     controller: timerController,
                     keyboardType: TextInputType.number,
                     autofocus: true,
-                    // FIX ERROR DI SINI: Pakai TextAlign.center
                     textAlign: TextAlign.center,
                     style: GoogleFonts.orbitron(
                       color: Colors.white,
@@ -74,7 +72,7 @@ class ControlScreen extends StatelessWidget {
                       suffixText: "min",
                       suffixStyle: const TextStyle(color: Colors.white24),
                       filled: true,
-                      fillColor: Colors.white.withAlpha(5),
+                      fillColor: Colors.white.withValues(alpha: 0.05),
                       enabledBorder: OutlineInputBorder(
                         borderSide: const BorderSide(color: Colors.white10),
                         borderRadius: BorderRadius.circular(15),
@@ -100,7 +98,7 @@ class ControlScreen extends StatelessWidget {
                     onPressed: () {
                       int? mins = int.tryParse(timerController.text);
                       if (mins != null && mins > 0) {
-                        powerData.setRelayTimer(mins, channel);
+                        powerData.sendTimerToHardware(channel, mins);
                       }
                       Navigator.pop(context);
                     },
@@ -140,7 +138,7 @@ class ControlScreen extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.white.withAlpha(10),
+                color: Colors.white.withValues(alpha: 0.05),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: Colors.white10),
               ),
@@ -177,6 +175,13 @@ class ControlScreen extends StatelessWidget {
     bool isOn,
     int channel,
   ) {
+    int remaining =
+        (channel == 1)
+            ? powerData.remainingSecondsR1
+            : powerData.remainingSecondsR2;
+    String schedule =
+        (channel == 1) ? powerData.scheduleR1 : powerData.scheduleR2;
+
     return Column(
       children: [
         Text(
@@ -189,47 +194,48 @@ class ControlScreen extends StatelessWidget {
           child: Switch(
             value: isOn,
             onChanged: (val) {
-              if (val == false) powerData.setRelayTimer(0, channel);
-              powerData.toggleRelay(
-                channel,
-                val,
-              ); // Langsung toggle tanpa warning
+              if (val == false) powerData.sendTimerToHardware(channel, 0);
+              powerData.toggleRelay(channel, val);
             },
             activeColor: Colors.greenAccent,
             inactiveThumbColor: Colors.redAccent,
           ),
         ),
-
-        // UI TIMER ADD-ON
         const SizedBox(height: 10),
         if (isOn) ...[
           Text(
-            powerData.remainingSeconds > 0
-                ? "OFF IN: ${powerData.formattedTimer}"
-                : "TIMER OFF",
+            remaining > 0
+                ? "OFF IN: ${powerData.formatRemainingTime(remaining)}"
+                : "MANUAL ON",
             style: GoogleFonts.shareTechMono(
-              color:
-                  powerData.remainingSeconds > 0
-                      ? Colors.orangeAccent
-                      : Colors.white24,
+              color: remaining > 0 ? Colors.orangeAccent : Colors.white24,
               fontSize: 10,
             ),
           ),
+          if (schedule.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                "SCH: $schedule",
+                style: GoogleFonts.shareTechMono(
+                  color: Colors.cyanAccent,
+                  fontSize: 10,
+                ),
+              ),
+            ),
           const SizedBox(height: 8),
           Row(
             children: [
-              // Tombol Input Manual
               _timerBtn(
                 context,
                 "SET",
                 () => _showTimerInput(context, powerData, channel),
               ),
               const SizedBox(width: 5),
-              // Tombol Cancel
               _timerBtn(
                 context,
                 "X",
-                () => powerData.setRelayTimer(0, channel),
+                () => powerData.sendTimerToHardware(channel, 0),
               ),
             ],
           ),
@@ -241,16 +247,15 @@ class ControlScreen extends StatelessWidget {
   Widget _timerBtn(BuildContext context, String label, VoidCallback onTap) {
     return InkWell(
       onTap: () {
-        // TAMBAHIN INI: Getar halus pas tombol menu ditekan
         HapticFeedback.lightImpact();
         onTap();
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: Colors.white.withAlpha(15),
+          color: Colors.white.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Colors.orangeAccent.withAlpha(80)),
+          border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.3)),
         ),
         child: Text(
           label,

@@ -14,7 +14,7 @@ class MonitoringScreen extends StatelessWidget {
           backgroundColor: Colors.transparent,
           appBar: AppBar(
             title: Text(
-              "PMS v1.3 by Ame",
+              "PMS v1.2 by Ame",
               style: GoogleFonts.orbitron(
                 fontSize: 16,
                 letterSpacing: 2,

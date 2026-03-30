@@ -29,20 +29,26 @@ class PowerProvider with ChangeNotifier {
   // Penjaga biar gak bouncing/joget
   DateTime? _lastRelayAction;
 
-  // Fungsi buat simpan status ke memori HP
+  // 1. FUNGSI SAVE: Nyatet status ke memori internal HP
   Future<void> _saveLocalState() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('relay1', relay1);
     await prefs.setBool('relay2', relay2);
-    // Simpan juga data penting lainnya kalau perlu
+    await prefs.setString('sch1', scheduleR1);
+    await prefs.setString('sch2', scheduleR2);
   }
 
-  // Fungsi buat ambil data pas aplikasi baru dibuka
+  // 2. FUNGSI LOAD: Dipanggil pas aplikasi pertama kali melek
   Future<void> loadLocalState() async {
     final prefs = await SharedPreferences.getInstance();
     relay1 = prefs.getBool('relay1') ?? false;
     relay2 = prefs.getBool('relay2') ?? false;
+    scheduleR1 = prefs.getString('sch1') ?? "";
+    scheduleR2 = prefs.getString('sch2') ?? "";
     notifyListeners();
+
+    // Otomatis usaha konek pas aplikasi dibuka
+    initPms();
   }
 
   Future<void> toggleConnection() async {
@@ -56,6 +62,7 @@ class PowerProvider with ChangeNotifier {
   }
 
   Future<void> initPms() async {
+    if (isLoading) return;
     isLoading = true;
     notifyListeners();
 
@@ -65,7 +72,6 @@ class PowerProvider with ChangeNotifier {
         client.connectionStatus!.state == MqttConnectionState.connected) {
       isConnected = true;
 
-      // Subscribe ke semua topik yang dibutuhin
       client.subscribe("esp32rm/sensor", MqttQos.atLeastOnce);
       client.subscribe("esp32rm/r1/stat", MqttQos.atLeastOnce);
       client.subscribe("esp32rm/r2/stat", MqttQos.atLeastOnce);
@@ -77,7 +83,6 @@ class PowerProvider with ChangeNotifier {
           recMess.payload.message,
         );
 
-        // Filter biar status relay gak mental-mental pas baru dipencet
         bool canUpdateRelay =
             _lastRelayAction == null ||
             DateTime.now().difference(_lastRelayAction!).inSeconds > 2;
@@ -86,9 +91,11 @@ class PowerProvider with ChangeNotifier {
           _updateData(rawPayload);
         } else if (topic == "esp32rm/r1/stat" && canUpdateRelay) {
           relay1 = (rawPayload == "ON");
+          _saveLocalState();
           notifyListeners();
         } else if (topic == "esp32rm/r2/stat" && canUpdateRelay) {
           relay2 = (rawPayload == "ON");
+          _saveLocalState();
           notifyListeners();
         }
       });
@@ -116,7 +123,6 @@ class PowerProvider with ChangeNotifier {
       batStatus = (data['bat'] ?? 0).toInt();
       uptime = data['uptime']?.toString() ?? "00:00:00";
 
-      // SINKRONISASI DATA TIMER & JADWAL DARI ESP32
       remainingSecondsR1 = (data['t1_rem'] ?? 0).toInt();
       remainingSecondsR2 = (data['t2_rem'] ?? 0).toInt();
       scheduleR1 = data['sch_1']?.toString() ?? "";
@@ -131,27 +137,44 @@ class PowerProvider with ChangeNotifier {
 
   Future<void> refreshData() async {
     if (isLoading) return;
-    await toggleConnection(); // Matiin terus nyalain lagi
-    if (!isConnected) await initPms();
+    _mqttService.disconnect();
+    isConnected = false;
+    notifyListeners();
+    await Future.delayed(const Duration(milliseconds: 500));
+    await initPms();
   }
 
   void toggleRelay(int channel, bool value) {
     if (!isConnected || _mqttService.client == null) return;
-
     HapticFeedback.mediumImpact();
     _lastRelayAction = DateTime.now();
 
     if (channel == 1) relay1 = value;
     if (channel == 2) relay2 = value;
+    _saveLocalState();
     notifyListeners();
 
     _publish("esp32rm/r$channel/cmd", value ? "ON" : "OFF");
   }
 
+  // --- FITUR BARU: KIRIM TIMER ---
   void sendTimerToHardware(int channel, int minutes) {
     if (!isConnected) return;
     HapticFeedback.lightImpact();
     _publish("esp32rm/r$channel/timer", minutes.toString());
+  }
+
+  // --- FITUR BARU: KIRIM JADWAL (HH:MM) ---
+  void sendScheduleToHardware(int channel, String time) {
+    if (!isConnected) return;
+    HapticFeedback.heavyImpact();
+    _publish("esp32rm/r$channel/schedule", time);
+
+    // Update lokal biar UI gak nunggu 3 detik
+    if (channel == 1) scheduleR1 = time;
+    if (channel == 2) scheduleR2 = time;
+    _saveLocalState();
+    notifyListeners();
   }
 
   void _publish(String topic, String payload) {

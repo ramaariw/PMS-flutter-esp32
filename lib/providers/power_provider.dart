@@ -15,6 +15,10 @@ class PowerProvider with ChangeNotifier {
   bool relay1 = false;
   bool relay2 = false;
   String uptime = "00:00:00";
+  int remainingSecondsR1 = 0;
+  int remainingSecondsR2 = 0;
+  String scheduleR1 = "";
+  String scheduleR2 = "";
 
   // PENJAGA BIAR GAK JOGET:
   DateTime? _lastRelayAction;
@@ -86,11 +90,58 @@ class PowerProvider with ChangeNotifier {
       dcVolt = (data['v_dc'] ?? 0.0).toDouble();
       batStatus = (data['bat'] ?? 0).toInt();
       uptime = data['uptime']?.toString() ?? "00:00:00";
+
+      // SINKRONISASI TIMER DARI HARDWARE (ESP32)
+      remainingSecondsR1 = (data['t1_rem'] ?? 0).toInt();
+      remainingSecondsR2 = (data['t2_rem'] ?? 0).toInt();
+      
+      // SINKRONISASI JADWAL
+      scheduleR1 = data['sch_1']?.toString() ?? "";
+      scheduleR2 = data['sch_2']?.toString() ?? "";
+
       notifyListeners();
     } catch (e) {
-      debugPrint("Error: $e");
+      debugPrint("Error Parsing: $e");
     }
   }
+
+  // Fungsi Kirim Timer ke ESP32 (Lewat MQTT)
+  void sendTimerToHardware(int channel, int minutes) {
+    if (!isConnected) return;
+    HapticFeedback.lightImpact();
+    
+    // Kirim payload angka menit ke topik timer
+    String topic = "esp32rm/r$channel/timer";
+    _publishPayload(topic, minutes.toString());
+  }
+
+  // Fungsi Kirim Jadwal (Format "HH:MM")
+  void sendScheduleToHardware(int channel, String time) {
+    if (!isConnected) return;
+    String topic = "esp32rm/r$channel/schedule";
+    _publishPayload(topic, time);
+  }
+
+  // Helper formatting sisa waktu
+  String formatRemainingTime(int seconds) {
+    if (seconds <= 0) return "00:00";
+    int m = seconds ~/ 60;
+    int s = seconds % 60;
+    return "${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}";
+  }
+
+  // Fungsi Publish (Biar kodingan lu gak berulang)
+  void _publishPayload(String topic, String payload) {
+    final builder = MqttClientPayloadBuilder();
+    builder.addString(payload);
+    _mqttService.client!.publishMessage(
+      topic,
+      MqttQos.atLeastOnce,
+      builder.payload!,
+      retain: true,
+    );
+  }
+}
 
   Future<void> refreshData() async {
     isLoading = true;

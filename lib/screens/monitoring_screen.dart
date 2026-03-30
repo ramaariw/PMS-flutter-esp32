@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:fl_chart/fl_chart.dart'; // Import Charting Package
 import '../providers/power_provider.dart';
 
 class MonitoringScreen extends StatelessWidget {
@@ -16,7 +17,7 @@ class MonitoringScreen extends StatelessWidget {
           backgroundColor: Colors.transparent,
           appBar: AppBar(
             title: Text(
-              "PMS v1.3 by Ame", // Update Version
+              "PMS v1.3 by Ame",
               style: GoogleFonts.orbitron(
                 fontSize: 16,
                 letterSpacing: 2,
@@ -51,9 +52,21 @@ class MonitoringScreen extends StatelessWidget {
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildHeader(context, powerData),
                   const SizedBox(height: 20),
+
+                  // --- SECTION NEW: LIVE WATT CHART ---
+                  _buildSectionLabel(isDark, "REAL-TIME LOAD (WATT)"),
+                  const SizedBox(height: 10),
+                  _buildWattChart(context, powerData, isDark),
+
+                  const SizedBox(height: 25),
+
+                  // --- SECTION: GRID DATA ---
+                  _buildSectionLabel(isDark, "SENSOR PARAMETERS"),
+                  const SizedBox(height: 10),
                   GridView.count(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -115,6 +128,68 @@ class MonitoringScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildSectionLabel(bool isDark, String label) {
+    return Text(
+      label,
+      style: GoogleFonts.orbitron(
+        fontSize: 10,
+        fontWeight: FontWeight.bold,
+        color: isDark ? Colors.white38 : Colors.black38,
+        letterSpacing: 1.5,
+      ),
+    );
+  }
+
+  Widget _buildWattChart(
+    BuildContext context,
+    PowerProvider powerData,
+    bool isDark,
+  ) {
+    return Container(
+      height: 120,
+      padding: const EdgeInsets.fromLTRB(10, 20, 20, 10),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withValues(alpha: 0.03) : Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+        boxShadow:
+            isDark
+                ? []
+                : [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+      ),
+      child: LineChart(
+        LineChartData(
+          gridData: const FlGridData(show: false),
+          titlesData: const FlTitlesData(show: false),
+          borderData: FlBorderData(show: false),
+          lineBarsData: [
+            LineChartBarData(
+              spots:
+                  powerData.wattHistory.asMap().entries.map((e) {
+                    return FlSpot(e.key.toDouble(), e.value);
+                  }).toList(),
+              isCurved: true,
+              color: Colors.redAccent,
+              barWidth: 3,
+              isStrokeCapRound: true,
+              dotData: const FlDotData(show: false),
+              belowBarData: BarAreaData(
+                show: true,
+                color: Colors.redAccent.withValues(alpha: 0.15),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Color _getBatColor(int status, bool isDark) {
     if (status > 60) return isDark ? Colors.greenAccent : Colors.green[700]!;
     if (status > 20) return Colors.orangeAccent;
@@ -143,14 +218,6 @@ class MonitoringScreen extends StatelessWidget {
                   : Colors.red.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(15),
           border: Border.all(color: accentColor, width: 1.5),
-          boxShadow: [
-            if (connected && isDark)
-              BoxShadow(
-                color: accentColor.withValues(alpha: 0.1),
-                blurRadius: 10,
-                spreadRadius: 1,
-              ),
-          ],
         ),
         child: Row(
           children: [

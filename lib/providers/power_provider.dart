@@ -16,6 +16,12 @@ class PowerProvider with ChangeNotifier {
   // --- V1.3 SYSTEM LOGS ---
   List<String> logs = [];
 
+  // --- V1.3 CHART DATA (Watt History) ---
+  List<double> wattHistory = List.filled(
+    10,
+    0.0,
+  ); // Simpan 10 titik data terakhir
+
   // Data Sensor
   double acVolt = 0.0, ampere = 0.0, watt = 0.0, kwh = 0.0, dcVolt = 0.0;
   int batStatus = 0;
@@ -40,7 +46,14 @@ class PowerProvider with ChangeNotifier {
     String timestamp =
         "${DateTime.now().hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}:${DateTime.now().second.toString().padLeft(2, '0')}";
     logs.insert(0, "[$timestamp] $message");
-    if (logs.length > 20) logs.removeLast(); // Batasi 20 log
+    if (logs.length > 20) logs.removeLast();
+    notifyListeners();
+  }
+
+  // --- FUNGSI UPDATE CHART ---
+  void _updateWattHistory(double newWatt) {
+    wattHistory.removeAt(0); // Hapus data paling kiri (lama)
+    wattHistory.add(newWatt); // Tambah data baru ke kanan
     notifyListeners();
   }
 
@@ -156,6 +169,9 @@ class PowerProvider with ChangeNotifier {
       remainingSecondsR2 = (data['t2_rem'] ?? 0).toInt();
       scheduleR1 = data['sch_1']?.toString() ?? "";
       scheduleR2 = data['sch_2']?.toString() ?? "";
+
+      // Update Grafik Watt
+      _updateWattHistory(watt);
 
       _saveLocalState();
       notifyListeners();

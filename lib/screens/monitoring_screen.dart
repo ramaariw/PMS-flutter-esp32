@@ -10,28 +10,35 @@ class MonitoringScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<PowerProvider>(
       builder: (context, powerData, child) {
+        final isDark = powerData.isDarkMode;
+
         return Scaffold(
           backgroundColor: Colors.transparent,
           appBar: AppBar(
             title: Text(
-              "PMS v1.2 by Ame",
+              "PMS v1.3 by Ame", // Update Version
               style: GoogleFonts.orbitron(
                 fontSize: 16,
                 letterSpacing: 2,
                 fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : Colors.black87,
               ),
             ),
             centerTitle: true,
             backgroundColor: Colors.transparent,
             elevation: 0,
+            leading: IconButton(
+              icon: Icon(isDark ? Icons.light_mode : Icons.dark_mode),
+              onPressed: () => powerData.toggleTheme(),
+            ),
             actions: [
               IconButton(
                 icon: Icon(
                   Icons.sync,
                   color:
                       powerData.isConnected
-                          ? Colors.greenAccent
-                          : Colors.white24,
+                          ? (isDark ? Colors.greenAccent : Colors.green[700])
+                          : (isDark ? Colors.white24 : Colors.black26),
                 ),
                 onPressed:
                     powerData.isLoading ? null : () => powerData.refreshData(),
@@ -45,7 +52,7 @@ class MonitoringScreen extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Column(
                 children: [
-                  _buildHeader(powerData),
+                  _buildHeader(context, powerData),
                   const SizedBox(height: 20),
                   GridView.count(
                     shrinkWrap: true,
@@ -56,40 +63,46 @@ class MonitoringScreen extends StatelessWidget {
                     childAspectRatio: 1.4,
                     children: [
                       _buildDataCard(
+                        context,
                         "AC VOLTAGE",
                         powerData.acVolt.toStringAsFixed(1),
                         "V",
                         Colors.blueAccent,
                       ),
                       _buildDataCard(
+                        context,
                         "CURRENT",
                         powerData.ampere.toStringAsFixed(2),
                         "A",
-                        Colors.greenAccent,
+                        isDark ? Colors.greenAccent : Colors.green[700]!,
                       ),
                       _buildDataCard(
+                        context,
                         "REAL POWER",
                         powerData.watt.toStringAsFixed(1),
                         "W",
                         Colors.redAccent,
                       ),
                       _buildDataCard(
+                        context,
                         "ENERGY",
                         powerData.kwh.toStringAsFixed(3),
                         "kWh",
-                        Colors.tealAccent,
+                        isDark ? Colors.tealAccent : Colors.teal[700]!,
                       ),
                       _buildDataCard(
+                        context,
                         "DC VOLTAGE",
                         powerData.dcVolt.toStringAsFixed(1),
                         "V",
                         Colors.orangeAccent,
                       ),
                       _buildDataCard(
+                        context,
                         "BATTERY",
                         "${powerData.batStatus}",
                         "%",
-                        _getBatColor(powerData.batStatus),
+                        _getBatColor(powerData.batStatus, isDark),
                       ),
                     ],
                   ),
@@ -102,18 +115,23 @@ class MonitoringScreen extends StatelessWidget {
     );
   }
 
-  Color _getBatColor(int status) {
-    if (status > 60) return Colors.greenAccent;
+  Color _getBatColor(int status, bool isDark) {
+    if (status > 60) return isDark ? Colors.greenAccent : Colors.green[700]!;
     if (status > 20) return Colors.orangeAccent;
     return Colors.redAccent;
   }
 
-  Widget _buildHeader(PowerProvider powerData) {
+  Widget _buildHeader(BuildContext context, PowerProvider powerData) {
     bool connected = powerData.isConnected;
-    bool loading = powerData.isLoading;
+    bool isDark = powerData.isDarkMode;
+
+    Color accentColor =
+        connected
+            ? (isDark ? Colors.greenAccent : Colors.green[700]!)
+            : Colors.redAccent;
 
     return InkWell(
-      onTap: loading ? null : () => powerData.toggleConnection(),
+      onTap: powerData.isLoading ? null : () => powerData.toggleConnection(),
       borderRadius: BorderRadius.circular(15),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
@@ -121,17 +139,14 @@ class MonitoringScreen extends StatelessWidget {
         decoration: BoxDecoration(
           color:
               connected
-                  ? Colors.green.withValues(alpha: 0.05)
+                  ? accentColor.withValues(alpha: 0.05)
                   : Colors.red.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(15),
-          border: Border.all(
-            color: connected ? Colors.greenAccent : Colors.redAccent,
-            width: 1.5,
-          ),
+          border: Border.all(color: accentColor, width: 1.5),
           boxShadow: [
-            if (connected)
+            if (connected && isDark)
               BoxShadow(
-                color: Colors.greenAccent.withValues(alpha: 0.1),
+                color: accentColor.withValues(alpha: 0.1),
                 blurRadius: 10,
                 spreadRadius: 1,
               ),
@@ -139,18 +154,18 @@ class MonitoringScreen extends StatelessWidget {
         ),
         child: Row(
           children: [
-            loading
-                ? const SizedBox(
+            powerData.isLoading
+                ? SizedBox(
                   width: 32,
                   height: 32,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: Colors.white,
+                    color: accentColor,
                   ),
                 )
                 : Icon(
                   connected ? Icons.sensors : Icons.sensors_off,
-                  color: connected ? Colors.greenAccent : Colors.redAccent,
+                  color: accentColor,
                   size: 32,
                 ),
             const SizedBox(width: 20),
@@ -161,7 +176,7 @@ class MonitoringScreen extends StatelessWidget {
                   Text(
                     connected ? "SYSTEM CONNECTED" : "SYSTEM DISCONNECTED",
                     style: GoogleFonts.orbitron(
-                      color: connected ? Colors.greenAccent : Colors.redAccent,
+                      color: accentColor,
                       fontWeight: FontWeight.bold,
                       fontSize: 11,
                     ),
@@ -170,38 +185,52 @@ class MonitoringScreen extends StatelessWidget {
                     Text(
                       "UPTIME: ${powerData.uptime}",
                       style: GoogleFonts.shareTechMono(
-                        color: Colors.orangeAccent,
+                        color:
+                            isDark ? Colors.orangeAccent : Colors.orange[800],
                         fontSize: 12,
                       ),
                     ),
                 ],
               ),
             ),
-            Icon(
-              Icons.power_settings_new,
-              color: connected ? Colors.greenAccent : Colors.redAccent,
-              size: 20,
-            ),
+            Icon(Icons.power_settings_new, color: accentColor, size: 20),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildDataCard(String label, String value, String unit, Color color) {
+  Widget _buildDataCard(
+    BuildContext context,
+    String label,
+    String value,
+    String unit,
+    Color color,
+  ) {
+    final isDark = Provider.of<PowerProvider>(context).isDarkMode;
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.03),
+        color: isDark ? Colors.white.withValues(alpha: 0.03) : Colors.white,
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+        boxShadow:
+            isDark
+                ? []
+                : [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
             label,
-            style: const TextStyle(
-              color: Colors.white38,
+            style: TextStyle(
+              color: isDark ? Colors.white38 : Colors.black45,
               fontSize: 9,
               fontWeight: FontWeight.bold,
             ),

@@ -7,32 +7,41 @@ import 'package:flutter/services.dart';
 class ControlScreen extends StatelessWidget {
   const ControlScreen({super.key});
 
-  // --- FUNGSI BARU: TIME PICKER JADWAL ---
   Future<void> _selectSchedule(
     BuildContext context,
     PowerProvider powerData,
     int channel,
   ) async {
+    final isDark = powerData.isDarkMode;
     final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.now(),
       builder: (context, child) {
         return Theme(
-          data: ThemeData.dark().copyWith(
-            colorScheme: const ColorScheme.dark(
-              primary: Colors.cyanAccent,
-              onPrimary: Colors.black,
-              surface: Color(0xFF1A1A1A),
-              onSurface: Colors.white,
-            ),
-          ),
+          data:
+              isDark
+                  ? ThemeData.dark().copyWith(
+                    colorScheme: const ColorScheme.dark(
+                      primary: Colors.cyanAccent,
+                      onPrimary: Colors.black,
+                      surface: Color(0xFF1A1A1A),
+                      onSurface: Colors.white,
+                    ),
+                  )
+                  : ThemeData.light().copyWith(
+                    colorScheme: ColorScheme.light(
+                      primary: Colors.cyan[700]!,
+                      onPrimary: Colors.white,
+                      surface: Colors.white,
+                      onSurface: Colors.black87,
+                    ),
+                  ),
           child: child!,
         );
       },
     );
 
     if (picked != null) {
-      // Format jadi HH:MM (Misal "21:30")
       String formattedTime =
           "${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}";
       powerData.sendScheduleToHardware(channel, formattedTime);
@@ -44,6 +53,7 @@ class ControlScreen extends StatelessWidget {
     PowerProvider powerData,
     int channel,
   ) {
+    final isDark = powerData.isDarkMode;
     TextEditingController timerController = TextEditingController();
 
     showModalBottomSheet(
@@ -60,12 +70,15 @@ class ControlScreen extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(25),
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1A1A),
+                color: isDark ? const Color(0xFF1A1A1A) : Colors.white,
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(30),
                 ),
                 border: Border.all(
-                  color: Colors.orangeAccent.withValues(alpha: 0.1),
+                  color:
+                      isDark
+                          ? Colors.orangeAccent.withValues(alpha: 0.1)
+                          : Colors.black12,
                   width: 1,
                 ),
               ),
@@ -76,7 +89,7 @@ class ControlScreen extends StatelessWidget {
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.white12,
+                      color: isDark ? Colors.white12 : Colors.black12,
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
@@ -84,7 +97,7 @@ class ControlScreen extends StatelessWidget {
                   Text(
                     "SET TIMER FOR RELAY $channel",
                     style: GoogleFonts.orbitron(
-                      color: Colors.orangeAccent,
+                      color: isDark ? Colors.orangeAccent : Colors.orange[800],
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
                     ),
@@ -96,22 +109,32 @@ class ControlScreen extends StatelessWidget {
                     autofocus: true,
                     textAlign: TextAlign.center,
                     style: GoogleFonts.orbitron(
-                      color: Colors.white,
+                      color: isDark ? Colors.white : Colors.black87,
                       fontSize: 24,
                       letterSpacing: 2,
                     ),
                     decoration: InputDecoration(
                       suffixText: "min",
-                      suffixStyle: const TextStyle(color: Colors.white24),
+                      suffixStyle: TextStyle(
+                        color: isDark ? Colors.white24 : Colors.black26,
+                      ),
                       filled: true,
-                      fillColor: Colors.white.withValues(alpha: 0.05),
+                      fillColor:
+                          isDark
+                              ? Colors.white.withValues(alpha: 0.05)
+                              : Colors.black.withValues(alpha: 0.05),
                       enabledBorder: OutlineInputBorder(
-                        borderSide: const BorderSide(color: Colors.white10),
+                        borderSide: BorderSide(
+                          color: isDark ? Colors.white10 : Colors.black12,
+                        ),
                         borderRadius: BorderRadius.circular(15),
                       ),
                       focusedBorder: OutlineInputBorder(
-                        borderSide: const BorderSide(
-                          color: Colors.orangeAccent,
+                        borderSide: BorderSide(
+                          color:
+                              isDark
+                                  ? Colors.orangeAccent
+                                  : Colors.orange[800]!,
                         ),
                         borderRadius: BorderRadius.circular(15),
                       ),
@@ -120,8 +143,9 @@ class ControlScreen extends StatelessWidget {
                   const SizedBox(height: 25),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orangeAccent,
-                      foregroundColor: Colors.black,
+                      backgroundColor:
+                          isDark ? Colors.orangeAccent : Colors.orange[800],
+                      foregroundColor: isDark ? Colors.black : Colors.white,
                       minimumSize: const Size(double.infinity, 55),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(15),
@@ -129,9 +153,8 @@ class ControlScreen extends StatelessWidget {
                     ),
                     onPressed: () {
                       int? mins = int.tryParse(timerController.text);
-                      if (mins != null && mins > 0) {
+                      if (mins != null && mins > 0)
                         powerData.sendTimerToHardware(channel, mins);
-                      }
                       Navigator.pop(context);
                     },
                     child: Text(
@@ -149,6 +172,7 @@ class ControlScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Provider.of<PowerProvider>(context).isDarkMode;
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
@@ -157,6 +181,7 @@ class ControlScreen extends StatelessWidget {
           style: GoogleFonts.orbitron(
             fontSize: 16,
             fontWeight: FontWeight.bold,
+            color: isDark ? Colors.white : Colors.black87,
           ),
         ),
         centerTitle: true,
@@ -170,9 +195,23 @@ class ControlScreen extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
+                color:
+                    isDark
+                        ? Colors.white.withValues(alpha: 0.05)
+                        : Colors.white,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white10),
+                border: Border.all(
+                  color: isDark ? Colors.white10 : Colors.black12,
+                ),
+                boxShadow:
+                    isDark
+                        ? []
+                        : [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 10,
+                          ),
+                        ],
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -183,6 +222,7 @@ class ControlScreen extends StatelessWidget {
                     "RELAY 1",
                     powerData.relay1,
                     1,
+                    isDark,
                   ),
                   _relayItem(
                     context,
@@ -190,6 +230,7 @@ class ControlScreen extends StatelessWidget {
                     "RELAY 2",
                     powerData.relay2,
                     2,
+                    isDark,
                   ),
                 ],
               ),
@@ -206,6 +247,7 @@ class ControlScreen extends StatelessWidget {
     String label,
     bool isOn,
     int channel,
+    bool isDark,
   ) {
     int remaining =
         (channel == 1)
@@ -213,12 +255,16 @@ class ControlScreen extends StatelessWidget {
             : powerData.remainingSecondsR2;
     String schedule =
         (channel == 1) ? powerData.scheduleR1 : powerData.scheduleR2;
+    Color activeColor = isDark ? Colors.greenAccent : Colors.green[700]!;
 
     return Column(
       children: [
         Text(
           label,
-          style: GoogleFonts.shareTechMono(color: Colors.white, fontSize: 14),
+          style: GoogleFonts.shareTechMono(
+            color: isDark ? Colors.white : Colors.black87,
+            fontSize: 14,
+          ),
         ),
         const SizedBox(height: 10),
         Transform.scale(
@@ -232,7 +278,7 @@ class ControlScreen extends StatelessWidget {
               }
               powerData.toggleRelay(channel, val);
             },
-            activeColor: Colors.greenAccent,
+            activeColor: activeColor,
             inactiveThumbColor: Colors.redAccent,
           ),
         ),
@@ -243,11 +289,13 @@ class ControlScreen extends StatelessWidget {
                 ? "OFF IN: ${powerData.formatRemainingTime(remaining)}"
                 : "MANUAL ON",
             style: GoogleFonts.shareTechMono(
-              color: remaining > 0 ? Colors.orangeAccent : Colors.white24,
+              color:
+                  remaining > 0
+                      ? Colors.orangeAccent
+                      : (isDark ? Colors.white24 : Colors.black26),
               fontSize: 10,
             ),
           ),
-          // INFO JADWAL
           Text(
             schedule.isNotEmpty && schedule != "OFF"
                 ? "SCH: $schedule"
@@ -255,8 +303,8 @@ class ControlScreen extends StatelessWidget {
             style: GoogleFonts.shareTechMono(
               color:
                   schedule.isNotEmpty && schedule != "OFF"
-                      ? Colors.cyanAccent
-                      : Colors.white12,
+                      ? (isDark ? Colors.cyanAccent : Colors.cyan[800])
+                      : (isDark ? Colors.white12 : Colors.black12),
               fontSize: 10,
             ),
           ),
@@ -267,19 +315,20 @@ class ControlScreen extends StatelessWidget {
                 context,
                 "SET",
                 () => _showTimerInput(context, powerData, channel),
+                isDark,
               ),
               const SizedBox(width: 4),
-              // TOMBOL BARU: CLOCK
               _timerBtn(
                 context,
                 "CLOCK",
                 () => _selectSchedule(context, powerData, channel),
+                isDark,
               ),
               const SizedBox(width: 4),
               _timerBtn(context, "X", () {
                 powerData.sendTimerToHardware(channel, 0);
                 powerData.sendScheduleToHardware(channel, "OFF");
-              }),
+              }, isDark),
             ],
           ),
         ],
@@ -287,7 +336,12 @@ class ControlScreen extends StatelessWidget {
     );
   }
 
-  Widget _timerBtn(BuildContext context, String label, VoidCallback onTap) {
+  Widget _timerBtn(
+    BuildContext context,
+    String label,
+    VoidCallback onTap,
+    bool isDark,
+  ) {
     return InkWell(
       onTap: () {
         HapticFeedback.lightImpact();
@@ -296,14 +350,17 @@ class ControlScreen extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
+          color:
+              isDark
+                  ? Colors.white.withValues(alpha: 0.05)
+                  : Colors.black.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Colors.white10),
+          border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
         ),
         child: Text(
           label,
-          style: const TextStyle(
-            color: Colors.white70,
+          style: TextStyle(
+            color: isDark ? Colors.white70 : Colors.black54,
             fontSize: 9,
             fontWeight: FontWeight.bold,
           ),

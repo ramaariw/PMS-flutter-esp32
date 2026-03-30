@@ -14,7 +14,7 @@ class MonitoringScreen extends StatelessWidget {
           backgroundColor: Colors.transparent,
           appBar: AppBar(
             title: Text(
-              "PMS v1.2 by Ame",
+              "PMS v1.3 by Ame",
               style: GoogleFonts.orbitron(
                 fontSize: 16,
                 letterSpacing: 2,
@@ -113,7 +113,6 @@ class MonitoringScreen extends StatelessWidget {
     bool loading = powerData.isLoading;
 
     return InkWell(
-      // INI DIA: Tambahin onTap biar bisa diklik buat toggle koneksi
       onTap: loading ? null : () => powerData.toggleConnection(),
       borderRadius: BorderRadius.circular(15),
       child: AnimatedContainer(
@@ -122,8 +121,8 @@ class MonitoringScreen extends StatelessWidget {
         decoration: BoxDecoration(
           color:
               connected
-                  ? Colors.green.withOpacity(0.05)
-                  : Colors.red.withOpacity(0.05),
+                  ? Colors.green.withValues(alpha: 0.05)
+                  : Colors.red.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(15),
           border: Border.all(
             color: connected ? Colors.greenAccent : Colors.redAccent,
@@ -132,7 +131,7 @@ class MonitoringScreen extends StatelessWidget {
           boxShadow: [
             if (connected)
               BoxShadow(
-                color: Colors.greenAccent.withOpacity(0.1),
+                color: Colors.greenAccent.withValues(alpha: 0.1),
                 blurRadius: 10,
                 spreadRadius: 1,
               ),
@@ -140,7 +139,6 @@ class MonitoringScreen extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // Kalau lagi loading (lagi usaha konek), tampilin muter-muter
             loading
                 ? const SizedBox(
                   width: 32,
@@ -165,7 +163,7 @@ class MonitoringScreen extends StatelessWidget {
                     style: GoogleFonts.orbitron(
                       color: connected ? Colors.greenAccent : Colors.redAccent,
                       fontWeight: FontWeight.bold,
-                      fontSize: 13,
+                      fontSize: 11,
                     ),
                   ),
                   if (connected)
@@ -179,7 +177,6 @@ class MonitoringScreen extends StatelessWidget {
                 ],
               ),
             ),
-            // Indikator tombol power di pojok kanan header
             Icon(
               Icons.power_settings_new,
               color: connected ? Colors.greenAccent : Colors.redAccent,
@@ -194,7 +191,7 @@ class MonitoringScreen extends StatelessWidget {
   Widget _buildDataCard(String label, String value, String unit, Color color) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.03),
+        color: Colors.white.withValues(alpha: 0.03),
         borderRadius: BorderRadius.circular(15),
         border: Border.all(color: Colors.white10),
       ),
@@ -219,7 +216,7 @@ class MonitoringScreen extends StatelessWidget {
           ),
           Text(
             unit,
-            style: TextStyle(color: color.withOpacity(0.7), fontSize: 10),
+            style: TextStyle(color: color.withValues(alpha: 0.7), fontSize: 10),
           ),
         ],
       ),

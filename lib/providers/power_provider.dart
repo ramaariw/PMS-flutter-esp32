@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mqtt_client/mqtt_client.dart';
 import '../core/mqtt_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class PowerProvider with ChangeNotifier {
   final MqttService _mqttService = MqttService();
@@ -27,6 +28,22 @@ class PowerProvider with ChangeNotifier {
 
   // Penjaga biar gak bouncing/joget
   DateTime? _lastRelayAction;
+
+  // Fungsi buat simpan status ke memori HP
+  Future<void> _saveLocalState() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('relay1', relay1);
+    await prefs.setBool('relay2', relay2);
+    // Simpan juga data penting lainnya kalau perlu
+  }
+
+  // Fungsi buat ambil data pas aplikasi baru dibuka
+  Future<void> loadLocalState() async {
+    final prefs = await SharedPreferences.getInstance();
+    relay1 = prefs.getBool('relay1') ?? false;
+    relay2 = prefs.getBool('relay2') ?? false;
+    notifyListeners();
+  }
 
   Future<void> toggleConnection() async {
     if (isConnected) {
@@ -105,6 +122,7 @@ class PowerProvider with ChangeNotifier {
       scheduleR1 = data['sch_1']?.toString() ?? "";
       scheduleR2 = data['sch_2']?.toString() ?? "";
 
+      _saveLocalState();
       notifyListeners();
     } catch (e) {
       debugPrint("Parsing Error: $e");

@@ -155,8 +155,9 @@ class ControlScreen extends StatelessWidget {
                     ),
                     onPressed: () {
                       int? mins = int.tryParse(timerController.text);
-                      if (mins != null && mins > 0)
+                      if (mins != null && mins > 0) {
                         powerData.sendTimerToHardware(channel, mins);
+                      }
                       Navigator.pop(context);
                     },
                     child: Text(
@@ -245,7 +246,7 @@ class ControlScreen extends StatelessWidget {
                   ),
                 ),
 
-                const SizedBox(height: 30),
+                const SizedBox(height: 25),
 
                 // --- SECTION 2: NETWORK TERMINAL ---
                 _buildSectionTitle(isDark, "NETWORK TERMINAL"),
@@ -266,7 +267,7 @@ class ControlScreen extends StatelessWidget {
                           : Colors.redAccent,
                 ),
 
-                const SizedBox(height: 30),
+                const SizedBox(height: 25),
 
                 // --- SECTION 3: SYSTEM ACTIONS ---
                 _buildSectionTitle(isDark, "SYSTEM ACTIONS"),
@@ -300,7 +301,58 @@ class ControlScreen extends StatelessWidget {
                   ],
                 ),
 
-                const SizedBox(height: 40),
+                const SizedBox(height: 25),
+
+                // --- SECTION 4: SYSTEM LOGS (TERMINAL) ---
+                _buildSectionTitle(isDark, "SYSTEM LOGS"),
+                const SizedBox(height: 10),
+                Container(
+                  height: 150,
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.black : const Color(0xFF1E1E1E),
+                    borderRadius: BorderRadius.circular(15),
+                    border: Border.all(
+                      color: isDark ? Colors.white10 : Colors.black26,
+                    ),
+                  ),
+                  child:
+                      powerData.logs.isEmpty
+                          ? Center(
+                            child: Text(
+                              "NO RECENT ACTIVITY",
+                              style: GoogleFonts.shareTechMono(
+                                color: Colors.white12,
+                                fontSize: 12,
+                              ),
+                            ),
+                          )
+                          : ListView.builder(
+                            itemCount: powerData.logs.length,
+                            itemBuilder: (context, index) {
+                              final log = powerData.logs[index];
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Text(
+                                  log,
+                                  style: GoogleFonts.shareTechMono(
+                                    color:
+                                        log.contains("ON")
+                                            ? Colors.greenAccent
+                                            : (log.contains("OFF") ||
+                                                log.contains("Error"))
+                                            ? Colors.redAccent
+                                            : Colors.white70,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                ),
+
+                const SizedBox(height: 30),
                 Center(
                   child: Text(
                     "PMS FIRMWARE V1.3 - ESP32 NODE",

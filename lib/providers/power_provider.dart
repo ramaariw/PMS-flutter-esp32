@@ -13,6 +13,9 @@ class PowerProvider with ChangeNotifier {
   bool _isDarkMode = true;
   bool get isDarkMode => _isDarkMode;
 
+  // --- V1.3 SYSTEM LOGS ---
+  List<String> logs = [];
+
   // Data Sensor
   double acVolt = 0.0, ampere = 0.0, watt = 0.0, kwh = 0.0, dcVolt = 0.0;
   int batStatus = 0;
@@ -32,39 +35,47 @@ class PowerProvider with ChangeNotifier {
 
   DateTime? _lastRelayAction;
 
-  // UPDATE V1.3: Simpan tema ke HP
+  // --- FUNGSI LOGGING ---
+  void addLog(String message) {
+    String timestamp =
+        "${DateTime.now().hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}:${DateTime.now().second.toString().padLeft(2, '0')}";
+    logs.insert(0, "[$timestamp] $message");
+    if (logs.length > 20) logs.removeLast(); // Batasi 20 log
+    notifyListeners();
+  }
+
   Future<void> _saveLocalState() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('relay1', relay1);
     await prefs.setBool('relay2', relay2);
     await prefs.setString('sch1', scheduleR1);
     await prefs.setString('sch2', scheduleR2);
-    await prefs.setBool('isDarkMode', _isDarkMode); // Simpan status tema
+    await prefs.setBool('isDarkMode', _isDarkMode);
   }
 
-  // UPDATE V1.3: Load tema pas startup
   Future<void> loadLocalState() async {
     final prefs = await SharedPreferences.getInstance();
     relay1 = prefs.getBool('relay1') ?? false;
     relay2 = prefs.getBool('relay2') ?? false;
     scheduleR1 = prefs.getString('sch1') ?? "";
     scheduleR2 = prefs.getString('sch2') ?? "";
-    _isDarkMode = prefs.getBool('isDarkMode') ?? true; // Default Dark
+    _isDarkMode = prefs.getBool('isDarkMode') ?? true;
 
+    addLog("System initialized...");
     notifyListeners();
     initPms();
   }
 
-  // FUNGSI BARU V1.3
   void toggleTheme() {
     _isDarkMode = !_isDarkMode;
+    addLog("Theme switched to ${_isDarkMode ? 'Dark' : 'Light'} Mode");
     _saveLocalState();
     notifyListeners();
   }
 
-  // --- LOGIC HARDWARE & MQTT (TETEP V1.2 - GAK BERUBAH) ---
   Future<void> toggleConnection() async {
     if (isConnected) {
+      addLog("Disconnecting from broker...");
       _mqttService.disconnect();
       isConnected = false;
       notifyListeners();
@@ -78,11 +89,14 @@ class PowerProvider with ChangeNotifier {
     isLoading = true;
     notifyListeners();
 
+    addLog("Connecting to HiveMQ Cloud...");
     final client = await _mqttService.connect();
 
     if (client != null &&
         client.connectionStatus!.state == MqttConnectionState.connected) {
       isConnected = true;
+      addLog("MQTT Connected successfully!");
+
       client.subscribe("esp32rm/sensor", MqttQos.atLeastOnce);
       client.subscribe("esp32rm/r1/stat", MqttQos.atLeastOnce);
       client.subscribe("esp32rm/r2/stat", MqttQos.atLeastOnce);
@@ -101,11 +115,15 @@ class PowerProvider with ChangeNotifier {
         if (topic == "esp32rm/sensor") {
           _updateData(rawPayload);
         } else if (topic == "esp32rm/r1/stat" && canUpdateRelay) {
-          relay1 = (rawPayload == "ON");
+          bool newState = (rawPayload == "ON");
+          if (relay1 != newState) addLog("Relay 1 status: $rawPayload");
+          relay1 = newState;
           _saveLocalState();
           notifyListeners();
         } else if (topic == "esp32rm/r2/stat" && canUpdateRelay) {
-          relay2 = (rawPayload == "ON");
+          bool newState = (rawPayload == "ON");
+          if (relay2 != newState) addLog("Relay 2 status: $rawPayload");
+          relay2 = newState;
           _saveLocalState();
           notifyListeners();
         }
@@ -113,10 +131,12 @@ class PowerProvider with ChangeNotifier {
 
       client.onDisconnected = () {
         isConnected = false;
+        addLog("Warning: MQTT Disconnected!");
         notifyListeners();
       };
     } else {
       isConnected = false;
+      addLog("Error: Connection failed.");
     }
     isLoading = false;
     notifyListeners();
@@ -146,6 +166,7 @@ class PowerProvider with ChangeNotifier {
 
   Future<void> refreshData() async {
     if (isLoading) return;
+    addLog("Refreshing system connection...");
     _mqttService.disconnect();
     isConnected = false;
     notifyListeners();
@@ -154,9 +175,15 @@ class PowerProvider with ChangeNotifier {
   }
 
   void toggleRelay(int channel, bool value) {
-    if (!isConnected || _mqttService.client == null) return;
+    if (!isConnected || _mqttService.client == null) {
+      addLog("Failed: No MQTT connection.");
+      return;
+    }
     HapticFeedback.mediumImpact();
     _lastRelayAction = DateTime.now();
+
+    addLog("Cmd: Relay $channel set to ${value ? 'ON' : 'OFF'}");
+
     if (channel == 1) relay1 = value;
     if (channel == 2) relay2 = value;
     _saveLocalState();
@@ -167,12 +194,24 @@ class PowerProvider with ChangeNotifier {
   void sendTimerToHardware(int channel, int minutes) {
     if (!isConnected) return;
     HapticFeedback.lightImpact();
+    if (minutes > 0) {
+      addLog("Timer: Relay $channel set $minutes min");
+    } else {
+      addLog("Timer: Relay $channel cleared");
+    }
     _publish("esp32rm/r$channel/timer", minutes.toString());
   }
 
   void sendScheduleToHardware(int channel, String time) {
     if (!isConnected) return;
     HapticFeedback.heavyImpact();
+
+    if (time == "OFF") {
+      addLog("Sch: Relay $channel cleared");
+    } else {
+      addLog("Sch: Relay $channel set to $time");
+    }
+
     _publish("esp32rm/r$channel/schedule", time);
     if (channel == 1) scheduleR1 = time;
     if (channel == 2) scheduleR2 = time;

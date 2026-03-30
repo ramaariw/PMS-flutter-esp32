@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 class ControlScreen extends StatelessWidget {
   const ControlScreen({super.key});
 
+  // --- LOGIC TIME PICKER ---
   Future<void> _selectSchedule(
     BuildContext context,
     PowerProvider powerData,
@@ -48,6 +49,7 @@ class ControlScreen extends StatelessWidget {
     }
   }
 
+  // --- LOGIC TIMER MODAL ---
   void _showTimerInput(
     BuildContext context,
     PowerProvider powerData,
@@ -173,6 +175,7 @@ class ControlScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Provider.of<PowerProvider>(context).isDarkMode;
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
@@ -190,53 +193,233 @@ class ControlScreen extends StatelessWidget {
       ),
       body: Consumer<PowerProvider>(
         builder: (context, powerData, child) {
-          return Padding(
+          return SingleChildScrollView(
             padding: const EdgeInsets.all(20),
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color:
-                    isDark
-                        ? Colors.white.withValues(alpha: 0.05)
-                        : Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: isDark ? Colors.white10 : Colors.black12,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // --- SECTION 1: RELAY CONTROLLER ---
+                _buildSectionTitle(isDark, "RELAY CONTROLLER"),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 25),
+                  decoration: BoxDecoration(
+                    color:
+                        isDark
+                            ? Colors.white.withValues(alpha: 0.05)
+                            : Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isDark ? Colors.white10 : Colors.black12,
+                    ),
+                    boxShadow:
+                        isDark
+                            ? []
+                            : [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.05),
+                                blurRadius: 10,
+                              ),
+                            ],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _relayItem(
+                        context,
+                        powerData,
+                        "RELAY 1",
+                        powerData.relay1,
+                        1,
+                        isDark,
+                      ),
+                      _relayItem(
+                        context,
+                        powerData,
+                        "RELAY 2",
+                        powerData.relay2,
+                        2,
+                        isDark,
+                      ),
+                    ],
+                  ),
                 ),
-                boxShadow:
-                    isDark
-                        ? []
-                        : [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 10,
-                          ),
-                        ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _relayItem(
-                    context,
-                    powerData,
-                    "RELAY 1",
-                    powerData.relay1,
-                    1,
-                    isDark,
+
+                const SizedBox(height: 30),
+
+                // --- SECTION 2: NETWORK TERMINAL ---
+                _buildSectionTitle(isDark, "NETWORK TERMINAL"),
+                const SizedBox(height: 10),
+                _buildInfoCard(
+                  context,
+                  isDark,
+                  icon: Icons.lan,
+                  title: "MQTT BROKER",
+                  value: "HiveMQ Cloud (Secure)",
+                  subValue:
+                      powerData.isConnected
+                          ? "CONNECTED (Port 8883)"
+                          : "DISCONNECTED",
+                  accent:
+                      powerData.isConnected
+                          ? Colors.cyanAccent
+                          : Colors.redAccent,
+                ),
+
+                const SizedBox(height: 30),
+
+                // --- SECTION 3: SYSTEM ACTIONS ---
+                _buildSectionTitle(isDark, "SYSTEM ACTIONS"),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildActionButton(
+                        context,
+                        isDark,
+                        "EMERGENCY OFF",
+                        Icons.power_off,
+                        Colors.redAccent,
+                        () {
+                          powerData.toggleRelay(1, false);
+                          powerData.toggleRelay(2, false);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildActionButton(
+                        context,
+                        isDark,
+                        "REFRESH PMS",
+                        Icons.refresh,
+                        Colors.orangeAccent,
+                        () => powerData.refreshData(),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 40),
+                Center(
+                  child: Text(
+                    "PMS FIRMWARE V1.3 - ESP32 NODE",
+                    style: GoogleFonts.shareTechMono(
+                      fontSize: 10,
+                      color: isDark ? Colors.white12 : Colors.black12,
+                    ),
                   ),
-                  _relayItem(
-                    context,
-                    powerData,
-                    "RELAY 2",
-                    powerData.relay2,
-                    2,
-                    isDark,
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           );
         },
+      ),
+    );
+  }
+
+  // --- UI COMPONENTS ---
+
+  Widget _buildSectionTitle(bool isDark, String title) {
+    return Text(
+      title,
+      style: GoogleFonts.orbitron(
+        fontSize: 10,
+        letterSpacing: 1.5,
+        color: isDark ? Colors.white38 : Colors.black38,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+  }
+
+  Widget _buildInfoCard(
+    BuildContext context,
+    bool isDark, {
+    required IconData icon,
+    required String title,
+    required String value,
+    required String subValue,
+    required Color accent,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withValues(alpha: 0.03) : Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            color: isDark ? accent : accent.withOpacity(0.8),
+            size: 28,
+          ),
+          const SizedBox(width: 15),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: isDark ? Colors.white38 : Colors.black45,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                value,
+                style: GoogleFonts.shareTechMono(
+                  color: isDark ? Colors.white : Colors.black87,
+                  fontSize: 14,
+                ),
+              ),
+              Text(
+                subValue,
+                style: GoogleFonts.shareTechMono(color: accent, fontSize: 10),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButton(
+    BuildContext context,
+    bool isDark,
+    String label,
+    IconData icon,
+    Color color,
+    VoidCallback onTap,
+  ) {
+    return InkWell(
+      onTap: () {
+        HapticFeedback.vibrate();
+        onTap();
+      },
+      borderRadius: BorderRadius.circular(15),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 15),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: GoogleFonts.orbitron(
+                color: color,
+                fontSize: 9,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

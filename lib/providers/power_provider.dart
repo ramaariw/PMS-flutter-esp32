@@ -9,6 +9,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 class PowerProvider with ChangeNotifier {
   final MqttService _mqttService = MqttService();
 
+  // --- V1.3 THEME STATE ---
+  bool _isDarkMode = true;
+  bool get isDarkMode => _isDarkMode;
+
   // Data Sensor
   double acVolt = 0.0, ampere = 0.0, watt = 0.0, kwh = 0.0, dcVolt = 0.0;
   int batStatus = 0;
@@ -20,37 +24,45 @@ class PowerProvider with ChangeNotifier {
   bool relay1 = false;
   bool relay2 = false;
 
-  // Data Timer & Schedule dari Hardware (V1.3)
+  // Data Timer & Schedule
   int remainingSecondsR1 = 0;
   int remainingSecondsR2 = 0;
   String scheduleR1 = "";
   String scheduleR2 = "";
 
-  // Penjaga biar gak bouncing/joget
   DateTime? _lastRelayAction;
 
-  // 1. FUNGSI SAVE: Nyatet status ke memori internal HP
+  // UPDATE V1.3: Simpan tema ke HP
   Future<void> _saveLocalState() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('relay1', relay1);
     await prefs.setBool('relay2', relay2);
     await prefs.setString('sch1', scheduleR1);
     await prefs.setString('sch2', scheduleR2);
+    await prefs.setBool('isDarkMode', _isDarkMode); // Simpan status tema
   }
 
-  // 2. FUNGSI LOAD: Dipanggil pas aplikasi pertama kali melek
+  // UPDATE V1.3: Load tema pas startup
   Future<void> loadLocalState() async {
     final prefs = await SharedPreferences.getInstance();
     relay1 = prefs.getBool('relay1') ?? false;
     relay2 = prefs.getBool('relay2') ?? false;
     scheduleR1 = prefs.getString('sch1') ?? "";
     scheduleR2 = prefs.getString('sch2') ?? "";
-    notifyListeners();
+    _isDarkMode = prefs.getBool('isDarkMode') ?? true; // Default Dark
 
-    // Otomatis usaha konek pas aplikasi dibuka
+    notifyListeners();
     initPms();
   }
 
+  // FUNGSI BARU V1.3
+  void toggleTheme() {
+    _isDarkMode = !_isDarkMode;
+    _saveLocalState();
+    notifyListeners();
+  }
+
+  // --- LOGIC HARDWARE & MQTT (TETEP V1.2 - GAK BERUBAH) ---
   Future<void> toggleConnection() async {
     if (isConnected) {
       _mqttService.disconnect();
@@ -71,7 +83,6 @@ class PowerProvider with ChangeNotifier {
     if (client != null &&
         client.connectionStatus!.state == MqttConnectionState.connected) {
       isConnected = true;
-
       client.subscribe("esp32rm/sensor", MqttQos.atLeastOnce);
       client.subscribe("esp32rm/r1/stat", MqttQos.atLeastOnce);
       client.subscribe("esp32rm/r2/stat", MqttQos.atLeastOnce);
@@ -107,7 +118,6 @@ class PowerProvider with ChangeNotifier {
     } else {
       isConnected = false;
     }
-
     isLoading = false;
     notifyListeners();
   }
@@ -122,7 +132,6 @@ class PowerProvider with ChangeNotifier {
       dcVolt = (data['v_dc'] ?? 0.0).toDouble();
       batStatus = (data['bat'] ?? 0).toInt();
       uptime = data['uptime']?.toString() ?? "00:00:00";
-
       remainingSecondsR1 = (data['t1_rem'] ?? 0).toInt();
       remainingSecondsR2 = (data['t2_rem'] ?? 0).toInt();
       scheduleR1 = data['sch_1']?.toString() ?? "";
@@ -148,29 +157,23 @@ class PowerProvider with ChangeNotifier {
     if (!isConnected || _mqttService.client == null) return;
     HapticFeedback.mediumImpact();
     _lastRelayAction = DateTime.now();
-
     if (channel == 1) relay1 = value;
     if (channel == 2) relay2 = value;
     _saveLocalState();
     notifyListeners();
-
     _publish("esp32rm/r$channel/cmd", value ? "ON" : "OFF");
   }
 
-  // --- FITUR BARU: KIRIM TIMER ---
   void sendTimerToHardware(int channel, int minutes) {
     if (!isConnected) return;
     HapticFeedback.lightImpact();
     _publish("esp32rm/r$channel/timer", minutes.toString());
   }
 
-  // --- FITUR BARU: KIRIM JADWAL (HH:MM) ---
   void sendScheduleToHardware(int channel, String time) {
     if (!isConnected) return;
     HapticFeedback.heavyImpact();
     _publish("esp32rm/r$channel/schedule", time);
-
-    // Update lokal biar UI gak nunggu 3 detik
     if (channel == 1) scheduleR1 = time;
     if (channel == 2) scheduleR2 = time;
     _saveLocalState();

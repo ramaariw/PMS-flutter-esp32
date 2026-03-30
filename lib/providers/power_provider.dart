@@ -1,29 +1,32 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mqtt_client/mqtt_client.dart';
 import '../core/mqtt_service.dart';
-import 'dart:async';
-import 'package:flutter/services.dart';
 
 class PowerProvider with ChangeNotifier {
   final MqttService _mqttService = MqttService();
 
+  // Data Sensor
   double acVolt = 0.0, ampere = 0.0, watt = 0.0, kwh = 0.0, dcVolt = 0.0;
   int batStatus = 0;
+  String uptime = "00:00:00";
+
+  // Status Koneksi & UI
   bool isConnected = false;
   bool isLoading = false;
   bool relay1 = false;
   bool relay2 = false;
-  String uptime = "00:00:00";
+
+  // Data Timer & Schedule dari Hardware (V1.3)
   int remainingSecondsR1 = 0;
   int remainingSecondsR2 = 0;
   String scheduleR1 = "";
   String scheduleR2 = "";
 
-  // PENJAGA BIAR GAK JOGET:
+  // Penjaga biar gak bouncing/joget
   DateTime? _lastRelayAction;
-  Timer? _relayTimer;
-  int remainingSeconds = 0;
 
   Future<void> toggleConnection() async {
     if (isConnected) {
@@ -36,13 +39,16 @@ class PowerProvider with ChangeNotifier {
   }
 
   Future<void> initPms() async {
+    isLoading = true;
+    notifyListeners();
+
     final client = await _mqttService.connect();
 
     if (client != null &&
         client.connectionStatus!.state == MqttConnectionState.connected) {
       isConnected = true;
-      notifyListeners();
 
+      // Subscribe ke semua topik yang dibutuhin
       client.subscribe("esp32rm/sensor", MqttQos.atLeastOnce);
       client.subscribe("esp32rm/r1/stat", MqttQos.atLeastOnce);
       client.subscribe("esp32rm/r2/stat", MqttQos.atLeastOnce);
@@ -54,7 +60,7 @@ class PowerProvider with ChangeNotifier {
           recMess.payload.message,
         );
 
-        // LOGIKA PENJAGA: Cek apakah aksi terakhir sudah lebih dari 2 detik
+        // Filter biar status relay gak mental-mental pas baru dipencet
         bool canUpdateRelay =
             _lastRelayAction == null ||
             DateTime.now().difference(_lastRelayAction!).inSeconds > 2;
@@ -76,8 +82,10 @@ class PowerProvider with ChangeNotifier {
       };
     } else {
       isConnected = false;
-      notifyListeners();
     }
+
+    isLoading = false;
+    notifyListeners();
   }
 
   void _updateData(String rawData) {
@@ -91,74 +99,22 @@ class PowerProvider with ChangeNotifier {
       batStatus = (data['bat'] ?? 0).toInt();
       uptime = data['uptime']?.toString() ?? "00:00:00";
 
-      // SINKRONISASI TIMER DARI HARDWARE (ESP32)
+      // SINKRONISASI DATA TIMER & JADWAL DARI ESP32
       remainingSecondsR1 = (data['t1_rem'] ?? 0).toInt();
       remainingSecondsR2 = (data['t2_rem'] ?? 0).toInt();
-      
-      // SINKRONISASI JADWAL
       scheduleR1 = data['sch_1']?.toString() ?? "";
       scheduleR2 = data['sch_2']?.toString() ?? "";
 
       notifyListeners();
     } catch (e) {
-      debugPrint("Error Parsing: $e");
+      debugPrint("Parsing Error: $e");
     }
   }
-
-  // Fungsi Kirim Timer ke ESP32 (Lewat MQTT)
-  void sendTimerToHardware(int channel, int minutes) {
-    if (!isConnected) return;
-    HapticFeedback.lightImpact();
-    
-    // Kirim payload angka menit ke topik timer
-    String topic = "esp32rm/r$channel/timer";
-    _publishPayload(topic, minutes.toString());
-  }
-
-  // Fungsi Kirim Jadwal (Format "HH:MM")
-  void sendScheduleToHardware(int channel, String time) {
-    if (!isConnected) return;
-    String topic = "esp32rm/r$channel/schedule";
-    _publishPayload(topic, time);
-  }
-
-  // Helper formatting sisa waktu
-  String formatRemainingTime(int seconds) {
-    if (seconds <= 0) return "00:00";
-    int m = seconds ~/ 60;
-    int s = seconds % 60;
-    return "${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}";
-  }
-
-  // Fungsi Publish (Biar kodingan lu gak berulang)
-  void _publishPayload(String topic, String payload) {
-    final builder = MqttClientPayloadBuilder();
-    builder.addString(payload);
-    _mqttService.client!.publishMessage(
-      topic,
-      MqttQos.atLeastOnce,
-      builder.payload!,
-      retain: true,
-    );
-  }
-}
 
   Future<void> refreshData() async {
-    isLoading = true;
-    notifyListeners();
-
-    if (isConnected) {
-      _mqttService.disconnect();
-      isConnected = false;
-      notifyListeners();
-      await Future.delayed(const Duration(milliseconds: 500));
-      await initPms();
-    } else {
-      await initPms();
-    }
-
-    isLoading = false;
-    notifyListeners();
+    if (isLoading) return;
+    await toggleConnection(); // Matiin terus nyalain lagi
+    if (!isConnected) await initPms();
   }
 
   void toggleRelay(int channel, bool value) {
@@ -171,11 +127,18 @@ class PowerProvider with ChangeNotifier {
     if (channel == 2) relay2 = value;
     notifyListeners();
 
-    String topic = "esp32rm/r$channel/cmd";
-    String payload = value ? "ON" : "OFF";
+    _publish("esp32rm/r$channel/cmd", value ? "ON" : "OFF");
+  }
+
+  void sendTimerToHardware(int channel, int minutes) {
+    if (!isConnected) return;
+    HapticFeedback.lightImpact();
+    _publish("esp32rm/r$channel/timer", minutes.toString());
+  }
+
+  void _publish(String topic, String payload) {
     final builder = MqttClientPayloadBuilder();
     builder.addString(payload);
-
     _mqttService.client!.publishMessage(
       topic,
       MqttQos.atLeastOnce,
@@ -184,27 +147,10 @@ class PowerProvider with ChangeNotifier {
     );
   }
 
-  void setRelayTimer(int minutes, int channel) {
-    HapticFeedback.mediumImpact();
-    _relayTimer?.cancel();
-    remainingSeconds = minutes * 60;
-    notifyListeners();
-
-    _relayTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (remainingSeconds > 0) {
-        remainingSeconds--;
-        notifyListeners();
-      } else {
-        toggleRelay(channel, false);
-        _relayTimer?.cancel();
-        notifyListeners();
-      }
-    });
-  }
-
-  String get formattedTimer {
-    int m = remainingSeconds ~/ 60;
-    int s = remainingSeconds % 60;
+  String formatRemainingTime(int seconds) {
+    if (seconds <= 0) return "00:00";
+    int m = seconds ~/ 60;
+    int s = seconds % 60;
     return "${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}";
   }
 }

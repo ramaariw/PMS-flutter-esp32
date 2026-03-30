@@ -7,6 +7,38 @@ import 'package:flutter/services.dart';
 class ControlScreen extends StatelessWidget {
   const ControlScreen({super.key});
 
+  // --- FUNGSI BARU: TIME PICKER JADWAL ---
+  Future<void> _selectSchedule(
+    BuildContext context,
+    PowerProvider powerData,
+    int channel,
+  ) async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Colors.cyanAccent,
+              onPrimary: Colors.black,
+              surface: Color(0xFF1A1A1A),
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      // Format jadi HH:MM (Misal "21:30")
+      String formattedTime =
+          "${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}";
+      powerData.sendScheduleToHardware(channel, formattedTime);
+    }
+  }
+
   void _showTimerInput(
     BuildContext context,
     PowerProvider powerData,
@@ -194,7 +226,10 @@ class ControlScreen extends StatelessWidget {
           child: Switch(
             value: isOn,
             onChanged: (val) {
-              if (val == false) powerData.sendTimerToHardware(channel, 0);
+              if (val == false) {
+                powerData.sendTimerToHardware(channel, 0);
+                powerData.sendScheduleToHardware(channel, "OFF");
+              }
               powerData.toggleRelay(channel, val);
             },
             activeColor: Colors.greenAccent,
@@ -212,17 +247,19 @@ class ControlScreen extends StatelessWidget {
               fontSize: 10,
             ),
           ),
-          if (schedule.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                "SCH: $schedule",
-                style: GoogleFonts.shareTechMono(
-                  color: Colors.cyanAccent,
-                  fontSize: 10,
-                ),
-              ),
+          // INFO JADWAL
+          Text(
+            schedule.isNotEmpty && schedule != "OFF"
+                ? "SCH: $schedule"
+                : "NO SCH",
+            style: GoogleFonts.shareTechMono(
+              color:
+                  schedule.isNotEmpty && schedule != "OFF"
+                      ? Colors.cyanAccent
+                      : Colors.white12,
+              fontSize: 10,
             ),
+          ),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -231,12 +268,18 @@ class ControlScreen extends StatelessWidget {
                 "SET",
                 () => _showTimerInput(context, powerData, channel),
               ),
-              const SizedBox(width: 5),
+              const SizedBox(width: 4),
+              // TOMBOL BARU: CLOCK
               _timerBtn(
                 context,
-                "X",
-                () => powerData.sendTimerToHardware(channel, 0),
+                "CLOCK",
+                () => _selectSchedule(context, powerData, channel),
               ),
+              const SizedBox(width: 4),
+              _timerBtn(context, "X", () {
+                powerData.sendTimerToHardware(channel, 0);
+                powerData.sendScheduleToHardware(channel, "OFF");
+              }),
             ],
           ),
         ],
@@ -251,17 +294,17 @@ class ControlScreen extends StatelessWidget {
         onTap();
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.3)),
+          border: Border.all(color: Colors.white10),
         ),
         child: Text(
           label,
           style: const TextStyle(
-            color: Colors.orangeAccent,
-            fontSize: 10,
+            color: Colors.white70,
+            fontSize: 9,
             fontWeight: FontWeight.bold,
           ),
         ),

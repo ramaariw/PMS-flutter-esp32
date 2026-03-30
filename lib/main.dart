@@ -3,11 +3,15 @@ import 'package:provider/provider.dart';
 import 'providers/power_provider.dart';
 import 'screens/dashboard.dart';
 
-void main() {
+// Di main.dart lu
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final powerProvider = PowerProvider();
+  await powerProvider.loadLocalState(); // <--- BACA MEMORI HP DULU
+
   runApp(
     MultiProvider(
-      providers: [ChangeNotifierProvider(create: (_) => PowerProvider())],
+      providers: [ChangeNotifierProvider.value(value: powerProvider)],
       child: const MyApp(),
     ),
   );

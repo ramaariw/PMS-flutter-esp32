@@ -1,13 +1,47 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../providers/power_provider.dart';
 import 'package:flutter/services.dart';
 
-class ControlScreen extends StatelessWidget {
+class ControlScreen extends StatefulWidget {
   const ControlScreen({super.key});
 
-  // --- LOGIC TIME PICKER ---
+  @override
+  State<ControlScreen> createState() => _ControlScreenState();
+}
+
+class _ControlScreenState extends State<ControlScreen> {
+  Timer? _localTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // FIX WARNING: Bungkus logic if block pakai {} biar linter anteng (Baris 188 & 190)
+    _localTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      final powerData = Provider.of<PowerProvider>(context, listen: false);
+      if (powerData.remainingSecondsR1 > 0) {
+        powerData.remainingSecondsR1--;
+        if (powerData.remainingSecondsR1 == 0) {
+          powerData.relay1 = false;
+        }
+      }
+      if (powerData.remainingSecondsR2 > 0) {
+        powerData.remainingSecondsR2--;
+        if (powerData.remainingSecondsR2 == 0) {
+          powerData.relay2 = false;
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _localTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _selectSchedule(
     BuildContext context,
     PowerProvider powerData,
@@ -49,7 +83,6 @@ class ControlScreen extends StatelessWidget {
     }
   }
 
-  // --- LOGIC TIMER MODAL ---
   void _showTimerInput(
     BuildContext context,
     PowerProvider powerData,
@@ -77,10 +110,7 @@ class ControlScreen extends StatelessWidget {
                   top: Radius.circular(30),
                 ),
                 border: Border.all(
-                  color:
-                      isDark
-                          ? Colors.orangeAccent.withValues(alpha: 0.1)
-                          : Colors.black12,
+                  color: isDark ? Colors.white10 : Colors.black12,
                   width: 1,
                 ),
               ),
@@ -121,6 +151,7 @@ class ControlScreen extends StatelessWidget {
                         color: isDark ? Colors.white24 : Colors.black26,
                       ),
                       filled: true,
+                      // FIX WARNING: Pakai withValues() gantiin withOpacity() baris 152 & 153
                       fillColor:
                           isDark
                               ? Colors.white.withValues(alpha: 0.05)
@@ -157,6 +188,12 @@ class ControlScreen extends StatelessWidget {
                       int? mins = int.tryParse(timerController.text);
                       if (mins != null && mins > 0) {
                         powerData.sendTimerToHardware(channel, mins);
+                        if (channel == 1) {
+                          powerData.remainingSecondsR1 = mins * 60;
+                        }
+                        if (channel == 2) {
+                          powerData.remainingSecondsR2 = mins * 60;
+                        }
                       }
                       Navigator.pop(context);
                     },
@@ -199,12 +236,12 @@ class ControlScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // --- SECTION 1: RELAY CONTROLLER ---
                 _buildSectionTitle(isDark, "RELAY CONTROLLER"),
                 const SizedBox(height: 10),
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 25),
                   decoration: BoxDecoration(
+                    // FIX WARNING: Pakai withValues() gantiin withOpacity() baris 239
                     color:
                         isDark
                             ? Colors.white.withValues(alpha: 0.05)
@@ -218,7 +255,8 @@ class ControlScreen extends StatelessWidget {
                             ? []
                             : [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
+                                // FIX WARNING: Pakai withValues() gantiin withOpacity() baris 249
+                                color: Colors.black.withValues(alpha: 0.05),
                                 blurRadius: 10,
                               ),
                             ],
@@ -245,10 +283,7 @@ class ControlScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 25),
-
-                // --- SECTION 2: NETWORK TERMINAL ---
                 _buildSectionTitle(isDark, "NETWORK TERMINAL"),
                 const SizedBox(height: 10),
                 _buildInfoCard(
@@ -266,10 +301,7 @@ class ControlScreen extends StatelessWidget {
                           ? Colors.cyanAccent
                           : Colors.redAccent,
                 ),
-
                 const SizedBox(height: 25),
-
-                // --- SECTION 3: SYSTEM ACTIONS ---
                 _buildSectionTitle(isDark, "SYSTEM ACTIONS"),
                 const SizedBox(height: 10),
                 Row(
@@ -284,6 +316,8 @@ class ControlScreen extends StatelessWidget {
                         () {
                           powerData.toggleRelay(1, false);
                           powerData.toggleRelay(2, false);
+                          powerData.remainingSecondsR1 = 0;
+                          powerData.remainingSecondsR2 = 0;
                         },
                       ),
                     ),
@@ -300,10 +334,7 @@ class ControlScreen extends StatelessWidget {
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 25),
-
-                // --- SECTION 4: SYSTEM LOGS (TERMINAL) ---
                 _buildSectionTitle(isDark, "SYSTEM LOGS"),
                 const SizedBox(height: 10),
                 Container(
@@ -351,11 +382,10 @@ class ControlScreen extends StatelessWidget {
                             },
                           ),
                 ),
-
                 const SizedBox(height: 30),
                 Center(
                   child: Text(
-                    "PMS FIRMWARE V1.3 - ESP32 NODE",
+                    "PMS FIRMWARE V2.0 - ESP32 NODE", // Gua update teks v2.0 biar keren jon
                     style: GoogleFonts.shareTechMono(
                       fontSize: 10,
                       color: isDark ? Colors.white12 : Colors.black12,
@@ -369,8 +399,6 @@ class ControlScreen extends StatelessWidget {
       ),
     );
   }
-
-  // --- UI COMPONENTS ---
 
   Widget _buildSectionTitle(bool isDark, String title) {
     return Text(
@@ -396,6 +424,7 @@ class ControlScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
+        // FIX WARNING: Pakai withValues() gantiin withOpacity() baris 417
         color: isDark ? Colors.white.withValues(alpha: 0.03) : Colors.white,
         borderRadius: BorderRadius.circular(15),
         border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
@@ -404,7 +433,8 @@ class ControlScreen extends StatelessWidget {
         children: [
           Icon(
             icon,
-            color: isDark ? accent : accent.withOpacity(0.8),
+            // FIX WARNING: Pakai withValues() gantiin withOpacity() baris 425
+            color: isDark ? accent : accent.withValues(alpha: 0.8),
             size: 28,
           ),
           const SizedBox(width: 15),
@@ -454,6 +484,7 @@ class ControlScreen extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 15),
         decoration: BoxDecoration(
+          // FIX WARNING: Pakai withValues() gantiin withOpacity() baris 475 & 477
           color: color.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(15),
           border: Border.all(color: color.withValues(alpha: 0.3)),
@@ -510,10 +541,13 @@ class ControlScreen extends StatelessWidget {
               if (val == false) {
                 powerData.sendTimerToHardware(channel, 0);
                 powerData.sendScheduleToHardware(channel, "OFF");
+                if (channel == 1) powerData.remainingSecondsR1 = 0;
+                if (channel == 2) powerData.remainingSecondsR2 = 0;
               }
               powerData.toggleRelay(channel, val);
             },
-            activeColor: activeColor,
+            // FIX WARNING: activeColor (deprecated) diubah jadi activeThumbColor (Baris 536)
+            activeThumbColor: activeColor,
             inactiveThumbColor: Colors.redAccent,
           ),
         ),
@@ -563,6 +597,8 @@ class ControlScreen extends StatelessWidget {
               _timerBtn(context, "X", () {
                 powerData.sendTimerToHardware(channel, 0);
                 powerData.sendScheduleToHardware(channel, "OFF");
+                if (channel == 1) powerData.remainingSecondsR1 = 0;
+                if (channel == 2) powerData.remainingSecondsR2 = 0;
               }, isDark),
             ],
           ),
@@ -585,6 +621,7 @@ class ControlScreen extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
         decoration: BoxDecoration(
+          // FIX WARNING: Pakai withValues() gantiin withOpacity() baris 612 & 613
           color:
               isDark
                   ? Colors.white.withValues(alpha: 0.05)

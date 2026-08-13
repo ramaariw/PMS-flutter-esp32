@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:hive_flutter/hive_flutter.dart'; // <--- AMAN: Import Hive masuk
 import 'providers/power_provider.dart';
 import 'screens/dashboard.dart';
 
 void main() async {
+  // 1. Pastiin engine Flutter siap sebelum nge-load database lokal
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 2. Inisialisasi Hive di internal storage HP & buka Box Database PMS
+  await Hive.initFlutter();
+  await Hive.openBox('pms_watt_db');
+
+  // 3. Load state lokal bawaan lo (Relay, Tema, Scheduler, dll)
   final powerProvider = PowerProvider();
   await powerProvider.loadLocalState();
 
@@ -25,7 +33,7 @@ class MyApp extends StatelessWidget {
       builder: (context, pms, child) {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
-          title: 'PMS V1.3',
+          title: 'PMS V2.0',
 
           // --- LIGHT THEME (Google Bright) ---
           theme: ThemeData(

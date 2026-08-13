@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mqtt_client/mqtt_client.dart';
+import 'package:hive_flutter/hive_flutter.dart'; // <--- AMAN: Hive Masuk
 import '../core/mqtt_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -16,16 +17,49 @@ class PowerProvider with ChangeNotifier {
   // --- V1.3 SYSTEM LOGS ---
   List<String> logs = [];
 
-  // --- V1.3 CHART DATA (Watt History) ---
-  List<double> wattHistory = List.filled(
-    10,
-    0.0,
-  ); // Simpan 10 titik data terakhir
+  // --- GROWABLE LIST (ANTI-CRASH) ---
+  List<double> wattHistory = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
 
-  // Data Sensor
-  double acVolt = 0.0, ampere = 0.0, watt = 0.0, kwh = 0.0, dcVolt = 0.0;
-  int batStatus = 0;
+  // --- DATA SENSOR AC (PZEM-004T) ---
+  double acVolt = 0.0;
+  double ampere = 0.0;
+  double watt = 0.0;
+  double kwh = 0.0;
+
+  // --- UPGRADE DATA SENSOR DC V2.0 (INA219) ---
+  double _voltageDC = 0.0;
+  double _currentDC = 0.0;
+  double _powerDC = 0.0;
+  double _batteryPercent = 0.0;
+
+  // Getter data DC murni biar bisa dibaca di DcMonitorSection
+  double get dcVolt => _voltageDC; // Alias biar nyambung ke screen lama
+  double get voltageDC => _voltageDC;
+  double get currentDC => _currentDC;
+  double get powerDC => _powerDC;
+  double get batteryPercent => _batteryPercent;
+  int get batStatus =>
+      _batteryPercent.toInt(); // Konversi int buat kecocokan UI lama
+
   String uptime = "00:00:00";
+  String timeString = "--:--:--";
+
+  // --- STATE TIMELINE GRAPH FILTER ---
+  String _selectedTimeFilter = "5 Min";
+  String get selectedTimeFilter => _selectedTimeFilter;
+
+  // --- V1.3 CUSTOM TARIF STATE ---
+  double _customTarif = 1444.70; // Nilai default default PLN R-1 1300VA
+  double get customTarif => _customTarif;
+
+  // --- KUNCI UTAMA HIVE: Link-kan langsung ke Box Database HP ---
+  final _wattBox = Hive.box('pms_watt_db');
+
+  List<Map<String, dynamic>> get rawWattLogs {
+    return _wattBox.values.map((item) {
+      return Map<String, dynamic>.from(item as Map);
+    }).toList();
+  }
 
   // Status Koneksi & UI
   bool isConnected = false;
@@ -33,27 +67,19 @@ class PowerProvider with ChangeNotifier {
   bool relay1 = false;
   bool relay2 = false;
 
-  // Data Timer & Schedule
   int remainingSecondsR1 = 0;
   int remainingSecondsR2 = 0;
   String scheduleR1 = "";
   String scheduleR2 = "";
 
   DateTime? _lastRelayAction;
+  StreamSubscription? _mqttSubscription;
 
-  // --- FUNGSI LOGGING ---
   void addLog(String message) {
     String timestamp =
         "${DateTime.now().hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}:${DateTime.now().second.toString().padLeft(2, '0')}";
     logs.insert(0, "[$timestamp] $message");
     if (logs.length > 20) logs.removeLast();
-    notifyListeners();
-  }
-
-  // --- FUNGSI UPDATE CHART ---
-  void _updateWattHistory(double newWatt) {
-    wattHistory.removeAt(0); // Hapus data paling kiri (lama)
-    wattHistory.add(newWatt); // Tambah data baru ke kanan
     notifyListeners();
   }
 
@@ -64,6 +90,7 @@ class PowerProvider with ChangeNotifier {
     await prefs.setString('sch1', scheduleR1);
     await prefs.setString('sch2', scheduleR2);
     await prefs.setBool('isDarkMode', _isDarkMode);
+    await prefs.setDouble('customTarif', _customTarif);
   }
 
   Future<void> loadLocalState() async {
@@ -73,10 +100,13 @@ class PowerProvider with ChangeNotifier {
     scheduleR1 = prefs.getString('sch1') ?? "";
     scheduleR2 = prefs.getString('sch2') ?? "";
     _isDarkMode = prefs.getBool('isDarkMode') ?? true;
+    _customTarif = prefs.getDouble('customTarif') ?? 1444.70;
 
-    addLog("System initialized...");
+    isConnected = false;
+    isLoading = false;
+
+    addLog("System initialized (Ready to Connect)...");
     notifyListeners();
-    initPms();
   }
 
   void toggleTheme() {
@@ -88,13 +118,27 @@ class PowerProvider with ChangeNotifier {
 
   Future<void> toggleConnection() async {
     if (isConnected) {
-      addLog("Disconnecting from broker...");
-      _mqttService.disconnect();
-      isConnected = false;
-      notifyListeners();
+      addLog("Manual request: Disconnecting...");
+      await disconnectAndClean();
     } else {
       await initPms();
     }
+  }
+
+  Future<void> disconnectAndClean() async {
+    isLoading = true;
+    notifyListeners();
+    try {
+      await _mqttSubscription?.cancel();
+      _mqttSubscription = null;
+      _mqttService.disconnect();
+    } catch (e) {
+      debugPrint("Disposing error: $e");
+    }
+    isConnected = false;
+    isLoading = false;
+    addLog("MQTT Disconnected & Session Cleared.");
+    notifyListeners();
   }
 
   Future<void> initPms() async {
@@ -103,48 +147,60 @@ class PowerProvider with ChangeNotifier {
     notifyListeners();
 
     addLog("Connecting to HiveMQ Cloud...");
-    final client = await _mqttService.connect();
+    final activeClient = await _mqttService.connect();
 
-    if (client != null &&
-        client.connectionStatus!.state == MqttConnectionState.connected) {
+    if (activeClient != null &&
+        activeClient.connectionStatus!.state == MqttConnectionState.connected) {
       isConnected = true;
       addLog("MQTT Connected successfully!");
 
-      client.subscribe("esp32rm/sensor", MqttQos.atLeastOnce);
-      client.subscribe("esp32rm/r1/stat", MqttQos.atLeastOnce);
-      client.subscribe("esp32rm/r2/stat", MqttQos.atLeastOnce);
+      _mqttService.subscribe("esp32rm/sensor");
+      _mqttService.subscribe("esp32rm/r1/stat");
+      _mqttService.subscribe("esp32rm/r2/stat");
 
-      client.updates!.listen((List<MqttReceivedMessage<MqttMessage>> c) {
-        final String topic = c[0].topic;
-        final MqttPublishMessage recMess = c[0].payload as MqttPublishMessage;
-        final String rawPayload = MqttPublishPayload.bytesToStringAsString(
-          recMess.payload.message,
+      await _mqttSubscription?.cancel();
+
+      final stream = _mqttService.getMessagesStream();
+      if (stream != null) {
+        _mqttSubscription = stream.listen(
+          (List<MqttReceivedMessage<MqttMessage>> c) {
+            final String topic = c[0].topic;
+            final MqttPublishMessage recMess =
+                c[0].payload as MqttPublishMessage;
+            final String rawPayload = MqttPublishPayload.bytesToStringAsString(
+              recMess.payload.message,
+            );
+
+            bool canUpdateRelay =
+                _lastRelayAction == null ||
+                DateTime.now().difference(_lastRelayAction!).inSeconds > 2;
+
+            if (topic == "esp32rm/sensor") {
+              _updateData(rawPayload);
+            } else if (topic == "esp32rm/r1/stat" && canUpdateRelay) {
+              bool newState = (rawPayload == "ON");
+              if (relay1 != newState) addLog("Relay 1 status: $rawPayload");
+              relay1 = newState;
+              _saveLocalState();
+              notifyListeners();
+            } else if (topic == "esp32rm/r2/stat" && canUpdateRelay) {
+              bool newState = (rawPayload == "ON");
+              if (relay2 != newState) addLog("Relay 2 status: $rawPayload");
+              relay2 = newState;
+              _saveLocalState();
+              notifyListeners();
+            }
+          },
+          onError: (err) {
+            addLog("Stream Error: $err");
+          },
         );
+      }
 
-        bool canUpdateRelay =
-            _lastRelayAction == null ||
-            DateTime.now().difference(_lastRelayAction!).inSeconds > 2;
-
-        if (topic == "esp32rm/sensor") {
-          _updateData(rawPayload);
-        } else if (topic == "esp32rm/r1/stat" && canUpdateRelay) {
-          bool newState = (rawPayload == "ON");
-          if (relay1 != newState) addLog("Relay 1 status: $rawPayload");
-          relay1 = newState;
-          _saveLocalState();
-          notifyListeners();
-        } else if (topic == "esp32rm/r2/stat" && canUpdateRelay) {
-          bool newState = (rawPayload == "ON");
-          if (relay2 != newState) addLog("Relay 2 status: $rawPayload");
-          relay2 = newState;
-          _saveLocalState();
-          notifyListeners();
-        }
-      });
-
-      client.onDisconnected = () {
+      activeClient.onDisconnected = () {
         isConnected = false;
         addLog("Warning: MQTT Disconnected!");
+        _mqttSubscription?.cancel();
         notifyListeners();
       };
     } else {
@@ -158,40 +214,153 @@ class PowerProvider with ChangeNotifier {
   void _updateData(String rawData) {
     try {
       final Map<String, dynamic> data = jsonDecode(rawData);
-      acVolt = (data['v_ac'] ?? 0.0).toDouble();
-      ampere = (data['a_ac'] ?? 0.0).toDouble();
-      watt = (data['w_ac'] ?? 0.0).toDouble();
-      kwh = (data['e_ac'] ?? 0.0).toDouble();
-      dcVolt = (data['v_dc'] ?? 0.0).toDouble();
-      batStatus = (data['bat'] ?? 0).toInt();
+
+      // --- PARSING DATA AC (PZEM) ---
+      acVolt = double.tryParse(data['v_ac']?.toString() ?? '0') ?? 0.0;
+      ampere = double.tryParse(data['a_ac']?.toString() ?? '0') ?? 0.0;
+      watt = double.tryParse(data['w_ac']?.toString() ?? '0') ?? 0.0;
+      kwh = double.tryParse(data['e_ac']?.toString() ?? '0') ?? 0.0;
+
+      // --- PARSING DATA DC SAKTI V2.0 (INA219) ---
+      _voltageDC = double.tryParse(data['v_dc']?.toString() ?? '0') ?? 0.0;
+      _currentDC =
+          double.tryParse(data['a_dc']?.toString() ?? '0') ??
+          0.0; // Ambil Amps DC murni
+      _powerDC =
+          double.tryParse(data['w_dc']?.toString() ?? '0') ??
+          0.0; // Ambil Watt DC murni
+      _batteryPercent = double.tryParse(data['bat']?.toString() ?? '0') ?? 0.0;
+
       uptime = data['uptime']?.toString() ?? "00:00:00";
-      remainingSecondsR1 = (data['t1_rem'] ?? 0).toInt();
-      remainingSecondsR2 = (data['t2_rem'] ?? 0).toInt();
-      scheduleR1 = data['sch_1']?.toString() ?? "";
-      scheduleR2 = data['sch_2']?.toString() ?? "";
+      timeString = data['time']?.toString() ?? "--:--:--";
 
-      // Update Grafik Watt
-      _updateWattHistory(watt);
+      if (data.containsKey('t1_rem')) {
+        remainingSecondsR1 = int.tryParse(data['t1_rem'].toString()) ?? 0;
+      }
+      if (data.containsKey('t2_rem')) {
+        remainingSecondsR2 = int.tryParse(data['t2_rem'].toString()) ?? 0;
+      }
+      if (data.containsKey('sch_1')) {
+        scheduleR1 = data['sch_1']?.toString() ?? "";
+      }
+      if (data.containsKey('sch_2')) {
+        scheduleR2 = data['sch_2']?.toString() ?? "";
+      }
 
-      _saveLocalState();
+      // --- KUNCI UTAMA HIVE: Tulis Langsung ke Storage HP ---
+      DateTime timestampNow = DateTime.now();
+      _wattBox.add({
+        "time":
+            timestampNow
+                .toIso8601String(), // Simpan format ISO String biar aman
+        "watt": watt,
+      });
+
+      // --- LOGIC AUTO-CLEANSING 24 JAM (SABUK PENGAMAN MEMORI) ---
+      DateTime cutoff24HoursAgo = timestampNow.subtract(
+        const Duration(hours: 24),
+      );
+      List<dynamic> keysToDelete = [];
+      for (var i = 0; i < _wattBox.length; i++) {
+        var item = _wattBox.getAt(i);
+        if (item != null) {
+          DateTime itemTime = DateTime.parse(item['time']);
+          if (itemTime.isBefore(cutoff24HoursAgo)) {
+            keysToDelete.add(_wattBox.keyAt(i));
+          }
+        }
+      }
+      if (keysToDelete.isNotEmpty) {
+        _wattBox.deleteAll(keysToDelete);
+      }
+
+      // --- JALANKAN REFRESH SKALA GRAFIK SESUAI FILTER YANG SEDANG DIPILIH ---
+      generateFilteredHistory(_selectedTimeFilter);
+
       notifyListeners();
     } catch (e) {
       debugPrint("Parsing Error: $e");
     }
   }
 
+  // --- SETTER SYNC FILTER DARI TOMBOL UI KE PROVIDER ---
+  void setSelectedTimeFilter(String filter) {
+    _selectedTimeFilter = filter;
+    generateFilteredHistory(filter);
+  }
+
+  void generateFilteredHistory(String filter) {
+    DateTime now = DateTime.now();
+    DateTime cutoff;
+
+    switch (filter) {
+      case "5 Min":
+        cutoff = now.subtract(const Duration(minutes: 5));
+        break;
+      case "15 Min":
+        cutoff = now.subtract(const Duration(minutes: 15));
+        break;
+      case "30 Min":
+        cutoff = now.subtract(const Duration(minutes: 30));
+        break;
+      case "1 Hour":
+        cutoff = now.subtract(const Duration(hours: 1));
+        break;
+      case "6 Hour":
+        cutoff = now.subtract(const Duration(hours: 6));
+        break;
+      case "12 Hour":
+        cutoff = now.subtract(const Duration(hours: 12));
+        break;
+      case "24 Hour":
+        cutoff = now.subtract(const Duration(hours: 24));
+        break;
+      default:
+        cutoff = now.subtract(const Duration(minutes: 5));
+    }
+
+    // --- PEMBETULAN PARSING DATE UNTUK STRUKTUR HIVE ---
+    List<double> filteredValues =
+        rawWattLogs
+            .where((log) {
+              DateTime logTime = DateTime.parse(log['time'] as String);
+              return logTime.isAfter(cutoff);
+            })
+            .map((log) => (log['watt'] as double))
+            .toList();
+
+    if (filteredValues.length < 10) {
+      wattHistory = List.from(filteredValues);
+      while (wattHistory.length < 10) {
+        wattHistory.insert(0, 0.0);
+      }
+    } else {
+      List<double> sampledPoints = [];
+      int chunkSize = filteredValues.length ~/ 10;
+      for (int i = 0; i < 10; i++) {
+        int start = i * chunkSize;
+        int end = (i == 9) ? filteredValues.length : start + chunkSize;
+        double chunkAverage =
+            filteredValues.sublist(start, end).reduce((a, b) => a + b) /
+            (end - start);
+        sampledPoints.add(chunkAverage);
+      }
+      wattHistory = sampledPoints;
+    }
+
+    notifyListeners(); // <--- SAKTI: Paksa grafik UI rendering ulang setelah difilter!
+  }
+
   Future<void> refreshData() async {
     if (isLoading) return;
     addLog("Refreshing system connection...");
-    _mqttService.disconnect();
-    isConnected = false;
-    notifyListeners();
+    await disconnectAndClean();
     await Future.delayed(const Duration(milliseconds: 500));
     await initPms();
   }
 
   void toggleRelay(int channel, bool value) {
-    if (!isConnected || _mqttService.client == null) {
+    if (!isConnected) {
       addLog("Failed: No MQTT connection.");
       return;
     }
@@ -236,9 +405,15 @@ class PowerProvider with ChangeNotifier {
   }
 
   void _publish(String topic, String payload) {
+    final activeClient = _mqttService.client;
+    if (activeClient == null ||
+        activeClient.connectionStatus!.state != MqttConnectionState.connected) {
+      return;
+    }
+
     final builder = MqttClientPayloadBuilder();
     builder.addString(payload);
-    _mqttService.client!.publishMessage(
+    activeClient.publishMessage(
       topic,
       MqttQos.atLeastOnce,
       builder.payload!,
@@ -251,5 +426,13 @@ class PowerProvider with ChangeNotifier {
     int m = seconds ~/ 60;
     int s = seconds % 60;
     return "${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}";
+  }
+
+  // FUNGSI UPDATE TARIF DARI USER INPUT
+  void updateTarif(double newTarif) {
+    _customTarif = newTarif;
+    _saveLocalState();
+    addLog("Tarif PLN updated to: Rp ${newTarif.toStringAsFixed(2)}/kWh");
+    notifyListeners();
   }
 }
